@@ -155,6 +155,8 @@ describe CheckCollectdSocket do
     end
     # TODO test floats
   end
+
+  # INVALID ARGUMENT TESTS
   context 'With missing or wrong arguments' do
     let(:wrapper) {SocketWrapperMock.new([])}
     let(:cli_handler) {instance_double(CliHandlerMock)}
@@ -349,6 +351,82 @@ describe CheckCollectdSocket do
                                               cli_handler)}
       it 'should return an error' do
         expect(STDOUT).to receive(:puts).with("ERROR: Timeout has to be a positive number")
+        check.run
+        @is_socket_open = wrapper.is_open
+      end
+    end
+  end
+  # REGEXP TESTS
+  context 'Using the regexp parameter' do
+    context "If we provide both metric and regexp" do
+      let(:wrapper) {SocketWrapperMock.new([])}
+      let(:cli_handler) {instance_double(CliHandlerMock)}
+      let(:check) {CheckCollectdComponent.new(nil,
+                                              @critical,
+                                              @warning,
+                                              "/id/id",
+                                              "/cpu*/usage",
+                                              "value",
+                                              @timeout_secs,
+                                              cli_handler)}
+      it 'should return an error' do
+        expect(STDOUT).to receive(:puts).with("ERROR: Only one of the options, metric or regexp, can be provided")
+        check.run
+        @is_socket_open = wrapper.is_open
+      end
+    end
+    context "With valid data" do
+      let(:wrapper) {SocketWrapperMock.new(["3 Value found",
+                        "094023 hostname/cpu1/usage",
+                        "094023 hostname/cpu2/usage",
+                        "094023 hostname/cpu3/usage",
+                        "1 Value found",
+                        "value=1",
+                        "1 Value found",
+                        "value=2",
+                        "1 Value found",
+                        "value=2"])}
+      let(:cli_handler) {instance_double(CliHandlerMock)}
+      let(:check) {CheckCollectdComponent.new(nil,
+                                              @critical,
+                                              @warning,
+                                              nil,
+                                              "/cpu*/usage",
+                                              "value",
+                                              @timeout_secs,
+                                              cli_handler)}
+      it 'should return ok when everything is bellow the threshold' do
+        expect(cli_handler).to receive(:ok).with("Everything matching hostname/cpu*/usage is within threshold")
+        check.run
+        @is_socket_open = wrapper.is_open
+      end
+      it 'should return critical when something is above the critical threshold' do
+        wrapper.populate(["3 Value found",
+                        "094023 hostname/cpu1/usage",
+                        "094023 hostname/cpu2/usage",
+                        "094023 hostname/cpu3/usage",
+                        "1 Value found",
+                        "value=1",
+                        "1 Value found",
+                        "value=4",
+                        "1 Value found",
+                        "value=6"])
+        expect(cli_handler).to receive(:critical).with("#{@metric_id} value = 6.000000, which is over the critical limit (5.0)")
+        check.run
+        @is_socket_open = wrapper.is_open
+      end
+      it 'should return warning when something is above the warning threshold' do
+        wrapper.populate(["3 Value found",
+                        "094023 hostname/cpu1/usage",
+                        "094023 hostname/cpu2/usage",
+                        "094023 hostname/cpu3/usage",
+                        "1 Value found",
+                        "value=1",
+                        "1 Value found",
+                        "value=4",
+                        "1 Value found",
+                        "value=2"])
+        expect(cli_handler).to receive(:critical).with("#{@metric_id} value = 4.000000, which is over the critical limit (3.0)")
         check.run
         @is_socket_open = wrapper.is_open
       end
