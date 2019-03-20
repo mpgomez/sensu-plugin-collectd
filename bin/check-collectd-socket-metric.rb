@@ -37,6 +37,7 @@ require 'timeout'
 # clearing the buffer) and is more decaupled from the main class
 class SocketWrapper
   attr_reader :socket_path
+
   def initialize(
       socket_path
   )
@@ -49,13 +50,9 @@ class SocketWrapper
   end
 
   def close
-    if ! @socket.closed
+    if @socket != nil
       @socket.close
     end
-  end
-
-  def closed
-    return @socket.closed
   end
 
   def readline
@@ -88,21 +85,30 @@ class CheckCollectdComponent
     @data_name = data_name
     @timeout = timeout
     @cli_handler = cli_handler
+    @is_regexp = false
   end
 
   def critical(message)
+    if @cli_handler != nil
       @cli_handler.critical message
+    end
+    if @socket != nil
       @socket.close
+    end
   end
 
   def warning(message)
+    if @cli_handler != nil
       @cli_handler.warning message
+    end
+    if @socket != nil
       @socket.close
+    end
   end
 
   def ok(message)
-      @cli_handler.ok message
-      @socket.close
+    @cli_handler.ok message
+    @socket.close
   end
 
   def isFloat(string_option)
@@ -110,7 +116,7 @@ class CheckCollectdComponent
     # safely converted to a valid float. If not, we want to catch the
     # exception and return an error, finishing the script.
     begin
-       return !!Float(string_option)
+      return !!Float(string_option)
     rescue
       return false
     end
@@ -126,26 +132,26 @@ class CheckCollectdComponent
   def validateArguments()
     # XXX extract error messages to different file
     # NULL checks
+    if @metric == nil and @regexp == nil
+      return false, "Metric and regexp can't be both empty"
+    end
     if @socket == nil
-      return false, "The socket can't be nil"
+      return false, "The socket can't be empty"
     end
     if @critical == nil
-      return false, "Critical can't be nil"
+      return false, "Critical can't be empty"
     end
     if @warning == nil
-      return false, "Warning can't be nil"
-    end
-    if @metric == nil
-      return false, "Metric can't be nil"
+      return false, "Warning can't be empty"
     end
     if @data_name == nil
-      return false, "Data name can't be nil"
+      return false, "Data name can't be empty"
     end
     if @timeout == nil
-      return false, "Timeout can't be nil"
+      return false, "Timeout can't be empty"
     end
     if @cli_handler == nil
-      return false, "The cli handler can't be nil"
+      return false, "The cli handler can't be empty"
     end
     # Validate data type
     if !self.isFloat(@critical)
@@ -163,6 +169,16 @@ class CheckCollectdComponent
     elsif @timeout.to_f < 0
       return false, "Timeout has to be a positive number"
     end
+    if @metric != nil and !(@metric.instance_of? String)
+      return false, "Metric has to be a string"
+    end
+    if @regexp != nil and !(@regexp.instance_of? String)
+      return false, "Regexp has to be a string"
+    end
+    # Validate that metric and regexp are not both set at the same time
+    if (@metric != nil and @metric != "") and (@regexp != nil and @regexp != "")
+      return false, "Only one of the options, metric or regexp, can be provided"
+    end
     return true, ""
   end
 
@@ -172,6 +188,9 @@ class CheckCollectdComponent
     @critical = @critical.to_f
     @warning = @warning.to_f
     @timeout = @timeout.to_f
+    if @regexp != nil and @regexp != ""
+      @is_regexp = true
+    end
   end
 
   # Reads the first line of the results of either GETVAL or LISTVAL
@@ -188,8 +207,15 @@ class CheckCollectdComponent
   # Ensures that the metric string starts with "/" so the metric_id is
   # constructer correctly
   def prependSlashInMetric
-    if @metric[0] != "/"
-      @metric = "/"+@metric
+    if @metric != nil and @metric != ""
+      if @metric[0] != "/"
+        @metric = "/" + @metric
+      end
+    end
+    if @regexp != nil and @regexp != ""
+      if @regexp[0] != "/"
+        @regexp = "/" + @regexp
+      end
     end
   end
 
@@ -200,7 +226,11 @@ class CheckCollectdComponent
   def buildMetricId(socket)
     socket.readline
     hostname = socket.readline.strip.split(" ")[1].strip.split("/")[0]
-    return hostname + @metric
+    if @is_regexp
+      return hostname + @regexp
+    else
+      return hostname + @metric
+    end
   end
 
   # Reads the results of the GETVAL from the socket, and builds a map
@@ -222,6 +252,59 @@ class CheckCollectdComponent
     return values
   end
 
+  def getMetricId
+    @socket.write("LISTVAL\n")
+    metric_id = buildMetricId(@socket)
+    @socket.close
+    @socket.open
+    return metric_id
+  end
+
+  def getMetric(metric_id)
+    query = "GETVAL #{metric_id}\n"
+    @socket.write(query)
+    return self.buildValueHash(@socket)
+  end
+
+  def escapeMetricRegexp(metric_regexp)
+    return metric_regexp.to_s.gsub("/", "\\/").gsub("*", ".*")
+  end
+
+  def findMetricMatches()
+    @socket.write("LISTVAL\n")
+    rawline = @socket.readline
+    num_lines = self.getNumResultsInSocket(rawline)
+    metrics = Array.new
+    metric_id_regex = self.escapeMetricRegexp(@regexp)
+    metric_id_regex = ".*?#{metric_id_regex}"
+    for i in 1..num_lines
+      metric = @socket.readline.strip.split(" ")[1]
+      if metric.match(metric_id_regex)
+        metrics.push(metric)
+      end
+    end
+    @socket.close
+    @socket.open
+    return metrics
+  end
+
+  def getMaxMetric(metric_ids)
+    all_metrics = Array.new
+    values = nil
+    highest_metric = ""
+    for metric_id in metric_ids
+      new_values = self.getMetric(metric_id)
+      if values == nil
+        highest_metric = metric_id
+        values = new_values
+      elsif new_values[:"#{@data_name}"] > values[:"#{@data_name}"]
+        highest_metric = metric_id
+        values = new_values
+      end
+    end
+    return highest_metric, values
+  end
+
   # Runs the sensu check, sending the calling sensu with either critical,
   # warning or ok.
   #
@@ -231,50 +314,60 @@ class CheckCollectdComponent
     begin
       @socket.open
     rescue => e
-      return self.critical "Tried to access UNIX domain socket (#{@socket.socket_path}) but failed: #{e}"
+      self.critical "Tried to access UNIX domain socket (#{@socket.socket_path}) but failed: #{e}"
+      return
     end
 
     begin
-      # XXX move to separate function (findMetricId)
-      # Read all metrics ids
-      @socket.write("LISTVAL\n")
-      metric_id = buildMetricId(@socket)
-      @socket.close
-      @socket.open
-      # If the metric hasn't been found, error
-      if metric_id == nil
-        puts "Could not find the metric that matches metric #{@metric}"
-        self.critical "Could not find the metric that matches #{@metric}, the metric #{}"
-        return
+      values = nil
+      metric_id = ""
+      # If we are querying an specific metric...
+      if not @is_regexp
+        # Read a metric
+        metric_id = self.getMetricId
+        # If the metric hasn't been found, error
+        if metric_id == nil
+          # Should never happen. We may end up in the rescue if we have any trouble
+          # with the socket, and that would be the only case where the metric could
+          # be null.
+          self.critical "Failed to build the metric id for #{@metric}"
+          return
+        end
+        values = self.getMetric(metric_id)
+        # If we are matching a regular expression:w
+      else
+        metrics_ids = self.findMetricMatches
+        metric_id, values = getMaxMetric(metrics_ids)
       end
-      # Read a metric
-      query = "GETVAL #{metric_id}\n"
-      @socket.write(query)
-      values = self.buildValueHash(@socket)
+      @socket.close
       if values == nil
         self.critical "The metric #{@metric} does not exist in this host."
         return
       end
-      @socket.close
     rescue => e
       self.critical "An error occured while trying to use the socket (#{@socket.socket_path}) : #{e}"
+      return
     end
-    # TODO check if the particular value is present in the map
     # Check critical threshold
     current_value = values[:"#{@data_name}"]
     if current_value == nil or current_value == ""
       self.critical "Metric value #{@data_name} not found in the list"
       return
     end
-    if current_value.to_f > @critical.to_f
-      self.critical "#{metric_id} #{@data_name} = #{current_value}, which is over the critical limit (#{@critical})"
+    current_value = current_value.to_f
+    if current_value.to_f > @critical
+      self.critical "#{metric_id}[#{@data_name}] = #{'%.2f' % current_value} is over the critical limit (#{'%.2f' % @critical})"
       return
     end
-    if current_value.to_f > @warning.to_f
-      self.warning "#{metric_id} #{@data_name} = #{current_value}, which is over the warning limit (#{@warning})"
+    if current_value > @warning
+      self.warning "#{metric_id}[#{@data_name}] = #{'%.2f' % current_value} is over the warning limit (#{'%.2f' % @warning})"
       return
     end
-    self.ok "#{metric_id} is within threshold"
+    if @is_regexp
+      self.ok "Everything matching #{@regexp} is within threshold"
+    else
+      self.ok "#{metric_id} is within threshold"
+    end
   end
 
   # Main function. It will validate the class attribute, ensure they have
@@ -285,9 +378,7 @@ class CheckCollectdComponent
     is_valid, error_message = self.validateArguments
     if !is_valid
       puts "ERROR: #{error_message}"
-      if @socket != nil
-        @socket.close
-      end
+      self.warning("Wrong check: #{error_message}")
       return
     end
     # Ensure correct data types and format
@@ -336,22 +427,22 @@ class CheckCollectdSocket < Sensu::Plugin::Check::CLI
          long: '--data_name <data name>',
          default: 'value'
 
-  option :help,
-         description: 'Show help',
-         short: '-h',
-         long: '--help'
-
   option :timeout,
          description: 'Socket timeout connection',
-         short: '-t',
-         long: '--timeout',
+         short: '-t <seconds>',
+         long: '--timeout <seconds>',
          default: 20
 
   option :regexp,
          description: 'Regular expresion to match serveral metrics ids. Cannot be used with the \"metric\" option',
-         short: '-r',
-         long: '--regexp',
+         short: '-r <regular expression for the metric id>',
+         long: '--regexp <regular expression for the metric id>',
          default: nil
+
+  option :help,
+         description: 'Show help',
+         short: '-h',
+         long: '--help'
 
   def run
     if config[:help]
