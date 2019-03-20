@@ -17,9 +17,9 @@
 #   gem: rspec (for the tests)
 #
 # USAGE:
-#   check-collectd-socket-metric.rb -m <metric_id> -w <warning threshold
-#     -c <critical threshold> [-d <metric value>] [-t <timeout>]
-#     [-s <socket path>]
+#   check-collectd-socket-metric.rb (-m <metric_id> | -r <metric id regexp>)
+#      -w <warning threshold> -c <critical threshold> [-d <metric value>]
+#      [-t <timeout>] [-s <socket path>]
 #
 # LICENSE:
 #   Copyright: Maria Pilar Gomez Moya (mp.gomezmoya@gmail.com) and Bartosz Lassak
@@ -75,6 +75,7 @@ class CheckCollectdComponent
       critical,
       warning,
       metric,
+      regexp,
       data_name,
       timeout,
       cli_handler
@@ -83,6 +84,7 @@ class CheckCollectdComponent
     @critical = critical
     @warning = warning
     @metric = metric
+    @regexp = regexp
     @data_name = data_name
     @timeout = timeout
     @cli_handler = cli_handler
@@ -325,7 +327,8 @@ class CheckCollectdSocket < Sensu::Plugin::Check::CLI
   option :metric,
          description: 'Metric we want to evaluate, for example, \"processes-carbon-clickhouse/ps_count\"',
          short: '-m <metric id>',
-         long: '--metric <metric id>'
+         long: '--metric <metric id>',
+         default: nil
 
   option :data_name,
          description: 'When expect a list of values in that metric, data name must be given. Default is \"value\"',
@@ -344,6 +347,12 @@ class CheckCollectdSocket < Sensu::Plugin::Check::CLI
          long: '--timeout',
          default: 20
 
+  option :regexp,
+         description: 'Regular expresion to match serveral metrics ids. Cannot be used with the \"metric\" option',
+         short: '-r',
+         long: '--regexp',
+         default: nil
+
   def run
     if config[:help]
       puts opt_parser
@@ -354,6 +363,7 @@ class CheckCollectdSocket < Sensu::Plugin::Check::CLI
                                            config[:critical],
                                            config[:warning],
                                            config[:metric],
+                                           config[:regexp],
                                            config[:data_name],
                                            config[:timeout],
                                            self)

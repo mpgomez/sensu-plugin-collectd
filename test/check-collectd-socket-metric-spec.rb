@@ -29,6 +29,7 @@ class SocketWrapperMock
   end
 
   def write(line)
+    # NO-OP
   end
 
   def populate(new_strings)
@@ -60,7 +61,14 @@ describe CheckCollectdSocket do
   context 'if the inital "/" is omitted from the metric' do
     let(:wrapper) {SocketWrapperMock.new([])}
     let(:cli_handler) {instance_double(CliHandlerMock)}
-    let(:check) {CheckCollectdComponent.new(wrapper, @critical, @warning, "id/id", "value", @timeout_secs, cli_handler)}
+    let(:check) {CheckCollectdComponent.new(wrapper,
+                                            @critical,
+                                            @warning,
+                                            "id/id",
+                                            nil,
+                                            "value",
+                                            @timeout_secs,
+                                            cli_handler)}
     it 'should match the metric even if hte initial \"/\" is omitted' do
       wrapper.populate(["1 Value found",
                         "094023 hostname/id/id",
@@ -77,7 +85,14 @@ describe CheckCollectdSocket do
   context 'With valid data' do
     let(:wrapper) {SocketWrapperMock.new([])}
     let(:cli_handler) {instance_double(CliHandlerMock)}
-    let(:check) {CheckCollectdComponent.new(wrapper, @critical, @warning, "/id/id", "value", @timeout_secs, cli_handler)}
+    let(:check) {CheckCollectdComponent.new(wrapper,
+                                            @critical,
+                                            @warning,
+                                            "/id/id",
+                                            nil,
+                                            "value",
+                                            @timeout_secs,
+                                            cli_handler)}
 
     # OK
     it 'should return ok when not reaching any threshold' do
@@ -148,6 +163,7 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
@@ -162,6 +178,7 @@ describe CheckCollectdSocket do
                                               nil,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
@@ -176,6 +193,7 @@ describe CheckCollectdSocket do
                                               @critical,
                                               nil,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
@@ -189,6 +207,7 @@ describe CheckCollectdSocket do
       let(:check) {CheckCollectdComponent.new(wrapper,
                                               @critical,
                                               @warning,
+                                              nil,
                                               nil,
                                               "value",
                                               @timeout_secs,
@@ -205,6 +224,7 @@ describe CheckCollectdSocket do
                                               @warning,
                                               "/id/id",
                                               nil,
+                                              nil,
                                               @timeout_secs,
                                               cli_handler)}
       it 'should return an error' do
@@ -218,6 +238,7 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               nil,
                                               cli_handler)}
@@ -232,6 +253,7 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               nil)}
@@ -246,6 +268,7 @@ describe CheckCollectdSocket do
                                               "invalid",
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
@@ -260,6 +283,7 @@ describe CheckCollectdSocket do
                                               @critical,
                                               "invalid",
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
@@ -274,6 +298,7 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               "invalid",
                                               cli_handler)}
@@ -288,6 +313,7 @@ describe CheckCollectdSocket do
                                               -0.5,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
@@ -302,6 +328,7 @@ describe CheckCollectdSocket do
                                               @critical,
                                               -3,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
@@ -316,6 +343,7 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               -8.0,
                                               cli_handler)}
