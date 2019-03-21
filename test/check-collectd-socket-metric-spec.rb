@@ -4,6 +4,7 @@ require '../bin/check-collectd-socket-metric'
 class SocketWrapperMock
   attr_reader :is_open
   attr_accessor :socket_path
+
   def initialize(return_string, sleep_seconds = 5)
     @return_string = return_string
     @current_line = 0
@@ -29,6 +30,7 @@ class SocketWrapperMock
   end
 
   def write(line)
+    # NO-OP
   end
 
   def populate(new_strings)
@@ -60,7 +62,14 @@ describe CheckCollectdSocket do
   context 'if the inital "/" is omitted from the metric' do
     let(:wrapper) {SocketWrapperMock.new([])}
     let(:cli_handler) {instance_double(CliHandlerMock)}
-    let(:check) {CheckCollectdComponent.new(wrapper, @critical, @warning, "id/id", "value", @timeout_secs, cli_handler)}
+    let(:check) {CheckCollectdComponent.new(wrapper,
+                                            @critical,
+                                            @warning,
+                                            "id/id",
+                                            nil,
+                                            "value",
+                                            @timeout_secs,
+                                            cli_handler)}
     it 'should match the metric even if hte initial \"/\" is omitted' do
       wrapper.populate(["1 Value found",
                         "094023 hostname/id/id",
@@ -77,7 +86,14 @@ describe CheckCollectdSocket do
   context 'With valid data' do
     let(:wrapper) {SocketWrapperMock.new([])}
     let(:cli_handler) {instance_double(CliHandlerMock)}
-    let(:check) {CheckCollectdComponent.new(wrapper, @critical, @warning, "/id/id", "value", @timeout_secs, cli_handler)}
+    let(:check) {CheckCollectdComponent.new(wrapper,
+                                            @critical,
+                                            @warning,
+                                            "/id/id",
+                                            nil,
+                                            "value",
+                                            @timeout_secs,
+                                            cli_handler)}
 
     # OK
     it 'should return ok when not reaching any threshold' do
@@ -97,7 +113,7 @@ describe CheckCollectdSocket do
                         "1 Value found",
                         "value=4"])
 
-      expect(cli_handler).to receive(:warning).with("hostname/id/id value = 4.000000, which is over the warning limit (3.0)")
+      expect(cli_handler).to receive(:warning).with("hostname/id/id[value] = 4.00 is over the warning limit (3.00)")
       check.run
       @is_socket_open = wrapper.is_open
     end
@@ -110,7 +126,7 @@ describe CheckCollectdSocket do
                         "1 Value found",
                         "value=6"])
 
-      expect(cli_handler).to receive(:critical).with("#{@metric_id} value = 6.000000, which is over the critical limit (5.0)")
+      expect(cli_handler).to receive(:critical).with("#{@metric_id}[value] = 6.00 is over the critical limit (5.00)")
       check.run
       @is_socket_open = wrapper.is_open
     end
@@ -130,7 +146,7 @@ describe CheckCollectdSocket do
       # @is_socket_open = wrapper.is_open
     end
     it 'should return a critical if the metric is not found' do
-      message="The metric /id/id does not exist in this host."
+      message = "The metric /id/id does not exist in this host."
       wrapper.populate(["1 Value found",
                         "094023 hostname/id/id",
                         "ERROR: Server error: No such value."])
@@ -140,6 +156,8 @@ describe CheckCollectdSocket do
     end
     # TODO test floats
   end
+
+  # INVALID ARGUMENT TESTS
   context 'With missing or wrong arguments' do
     let(:wrapper) {SocketWrapperMock.new([])}
     let(:cli_handler) {instance_double(CliHandlerMock)}
@@ -148,11 +166,13 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
       it 'should return an error' do
-        expect(STDOUT).to receive(:puts).with("ERROR: The socket can't be nil")
+        expect(STDOUT).to receive(:puts).with("ERROR: The socket can't be empty")
+        expect(cli_handler).to receive(:warning).with("Wrong check: The socket can't be empty")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -162,11 +182,13 @@ describe CheckCollectdSocket do
                                               nil,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
       it 'should return an error' do
-        expect(STDOUT).to receive(:puts).with("ERROR: Critical can't be nil")
+        expect(STDOUT).to receive(:puts).with("ERROR: Critical can't be empty")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Critical can't be empty")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -176,25 +198,29 @@ describe CheckCollectdSocket do
                                               @critical,
                                               nil,
                                               "/id/id",
-                                              "value",
-                                              @timeout_secs,
-                                              cli_handler)}
-      it 'should return an error' do
-        expect(STDOUT).to receive(:puts).with("ERROR: Warning can't be nil")
-        check.run
-        @is_socket_open = wrapper.is_open
-      end
-    end
-    context "With null metric" do
-      let(:check) {CheckCollectdComponent.new(wrapper,
-                                              @critical,
-                                              @warning,
                                               nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
       it 'should return an error' do
-        expect(STDOUT).to receive(:puts).with("ERROR: Metric can't be nil")
+        expect(STDOUT).to receive(:puts).with("ERROR: Warning can't be empty")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Warning can't be empty")
+        check.run
+        @is_socket_open = wrapper.is_open
+      end
+    end
+    context "With null metric and regexp" do
+      let(:check) {CheckCollectdComponent.new(wrapper,
+                                              @critical,
+                                              @warning,
+                                              nil,
+                                              nil,
+                                              "value",
+                                              @timeout_secs,
+                                              cli_handler)}
+      it 'should return an error' do
+        expect(STDOUT).to receive(:puts).with("ERROR: Metric and regexp can't be both empty")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Metric and regexp can't be both empty")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -205,10 +231,12 @@ describe CheckCollectdSocket do
                                               @warning,
                                               "/id/id",
                                               nil,
+                                              nil,
                                               @timeout_secs,
                                               cli_handler)}
       it 'should return an error' do
-        expect(STDOUT).to receive(:puts).with("ERROR: Data name can't be nil")
+        expect(STDOUT).to receive(:puts).with("ERROR: Data name can't be empty")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Data name can't be empty")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -218,11 +246,13 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               nil,
                                               cli_handler)}
       it 'should return an error' do
-        expect(STDOUT).to receive(:puts).with("ERROR: Timeout can't be nil")
+        expect(STDOUT).to receive(:puts).with("ERROR: Timeout can't be empty")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Timeout can't be empty")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -232,11 +262,12 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               nil)}
       it 'should return an error' do
-        expect(STDOUT).to receive(:puts).with("ERROR: The cli handler can't be nil")
+        expect(STDOUT).to receive(:puts).with("ERROR: The cli handler can't be empty")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -246,11 +277,13 @@ describe CheckCollectdSocket do
                                               "invalid",
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
       it 'should return an error' do
         expect(STDOUT).to receive(:puts).with("ERROR: Critical has to be a number")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Critical has to be a number")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -260,11 +293,13 @@ describe CheckCollectdSocket do
                                               @critical,
                                               "invalid",
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
       it 'should return an error' do
         expect(STDOUT).to receive(:puts).with("ERROR: Warning has to be a number")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Warning has to be a number")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -274,11 +309,13 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               "invalid",
                                               cli_handler)}
       it 'should return an error' do
         expect(STDOUT).to receive(:puts).with("ERROR: Timeout has to be a number")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Timeout has to be a number")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -288,11 +325,13 @@ describe CheckCollectdSocket do
                                               -0.5,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
       it 'should return an error' do
         expect(STDOUT).to receive(:puts).with("ERROR: Critical has to be a positive number")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Critical has to be a positive number")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -302,11 +341,13 @@ describe CheckCollectdSocket do
                                               @critical,
                                               -3,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               @timeout_secs,
                                               cli_handler)}
       it 'should return an error' do
         expect(STDOUT).to receive(:puts).with("ERROR: Warning has to be a positive number")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Warning has to be a positive number")
         check.run
         @is_socket_open = wrapper.is_open
       end
@@ -316,11 +357,91 @@ describe CheckCollectdSocket do
                                               @critical,
                                               @warning,
                                               "/id/id",
+                                              nil,
                                               "value",
                                               -8.0,
                                               cli_handler)}
       it 'should return an error' do
         expect(STDOUT).to receive(:puts).with("ERROR: Timeout has to be a positive number")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Timeout has to be a positive number")
+        check.run
+        @is_socket_open = wrapper.is_open
+      end
+    end
+  end
+  # REGEXP TESTS
+  context 'Using the regexp parameter' do
+    context 'If we provide both metric and regexp' do
+      let(:wrapper) {SocketWrapperMock.new([])}
+      let(:cli_handler) {instance_double(CliHandlerMock)}
+      let(:check) {CheckCollectdComponent.new(wrapper,
+                                              @critical,
+                                              @warning,
+                                              "/id/id",
+                                              "/cpu*/usage",
+                                              "value",
+                                              @timeout_secs,
+                                              cli_handler)}
+      it 'should return an error' do
+        expect(STDOUT).to receive(:puts).with("ERROR: Only one of the options, metric or regexp, can be provided")
+        expect(cli_handler).to receive(:warning).with("Wrong check: Only one of the options, metric or regexp, can be provided")
+        check.run
+        @is_socket_open = wrapper.is_open
+      end
+    end
+    context "With valid data" do
+      let(:wrapper) {SocketWrapperMock.new(["4 Value found",
+                                            "094023 hostname/cpu1/usage",
+                                            "094023 hostname/cpu2/usage",
+                                            "094023 hostname/cpu2/nomatch",
+                                            "094023 hostname/cpu3/usage",
+                                            "1 Value found",
+                                            "value=1",
+                                            "1 Value found",
+                                            "value=2",
+                                            "1 Value found",
+                                            "value=2"])}
+      let(:cli_handler) {instance_double(CliHandlerMock)}
+      let(:check) {CheckCollectdComponent.new(wrapper,
+                                              @critical,
+                                              @warning,
+                                              nil,
+                                              "/cpu*/usage",
+                                              "value",
+                                              @timeout_secs,
+                                              cli_handler)}
+      it 'should return ok when everything is bellow the threshold' do
+        expect(cli_handler).to receive(:ok).with("Everything matching /cpu*/usage is within threshold")
+        check.run
+        @is_socket_open = wrapper.is_open
+      end
+      it 'should return critical when something is above the critical threshold' do
+        wrapper.populate(["3 Value found",
+                          "094023 hostname/cpu1/usage",
+                          "094023 hostname/cpu2/usage",
+                          "094023 hostname/cpu3/usage",
+                          "1 Value found",
+                          "value=1",
+                          "1 Value found",
+                          "value=4",
+                          "1 Value found",
+                          "value=6"])
+        expect(cli_handler).to receive(:critical).with("hostname/cpu3/usage[value] = 6.00 is over the critical limit (5.00)")
+        check.run
+        @is_socket_open = wrapper.is_open
+      end
+      it 'should return warning when something is above the warning threshold' do
+        wrapper.populate(["3 Value found",
+                          "094023 hostname/cpu1/usage",
+                          "094023 hostname/cpu2/usage",
+                          "094023 hostname/cpu3/usage",
+                          "1 Value found",
+                          "value=1",
+                          "1 Value found",
+                          "value=4",
+                          "1 Value found",
+                          "value=2"])
+        expect(cli_handler).to receive(:warning).with("hostname/cpu2/usage[value] = 4.00 is over the warning limit (3.00)")
         check.run
         @is_socket_open = wrapper.is_open
       end
