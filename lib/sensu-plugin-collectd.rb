@@ -1,0 +1,1 @@
+require 'sensu-plugin-collectd/version'
