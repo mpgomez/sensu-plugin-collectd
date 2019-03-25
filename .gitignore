@@ -1,0 +1,9 @@
+/.bundle/
+/.yardoc
+/Gemfile.lock
+/pkg/
+/spec/reports/
+/tmp/
+*.bundle
+.idea/*
+*.gem
