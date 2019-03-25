@@ -11,6 +11,11 @@ https://github.com/sensu-plugins
 Use the latest version of the `check-collectd-socket-metric.rb` from releases.
 See the [sensu installation instructions](http://sensu-plugins.io/docs/installation_instructions.html)
 
+This plugin is available as a gem, so you can do
+```bash
+gem install sensu-plugin-collectd
+```
+
 ## Collectd: what you need to know to use this plugin
 To use this sensu check you need to be at least vaguely familiar with collectd. You can check [the docs](https://collectd.org/documentation.shtml). What you will need to know is the name of the metric, and the metric from the list you want to alert on. If you want to see all the metrics available in a machine:
 
