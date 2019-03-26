@@ -1,6 +1,7 @@
 
 lib = File.expand_path("../lib", __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
+
 require "sensu-plugin-collectd/version"
 
 Gem::Specification.new do |spec|
@@ -11,15 +12,12 @@ Gem::Specification.new do |spec|
 
   spec.summary       = 'Sensu plugin to pull metrics from the collectd socket'
   spec.homepage      = "https://github.com/mpgomez/sensu-plugin-collectd"
-
-  # Specify which files should be added to the gem when it is released.
-  # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
-  spec.files         = Dir.chdir(File.expand_path('..', __FILE__)) do
-    `git ls-files -z`.split("\x0").reject { |f| f.match(%r{^(test|spec|features)/}) }
-  end
-  spec.bindir        = "exe"
-  spec.executables   = spec.files.grep(%r{^exe/}) { |f| File.basename(f) }
+  spec.executables   = Dir.glob('bin/**/*.rb').map { |file| File.basename(file) }
+  spec.files         = Dir.glob('{bin,lib}/**/*') + %w[LICENSE README.md CHANGELOG.md]
+  spec.license       = 'MIT'
   spec.require_paths = ["lib"]
+  spec.platform      = Gem::Platform::RUBY
+  spec.test_files    = spec.files.grep(%r{^(test|spec|features)/})
 
   spec.add_runtime_dependency "sensu-plugin", "~> 1.2"
 
