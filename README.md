@@ -17,6 +17,24 @@ gem install sensu-plugin-collectd
 ```
 
 ## Collectd: what you need to know to use this plugin
+### Collectd socket config (access permissions)
+If you are running sensu as root, you probably don't need any extra configuration, but if your sensu
+framework is running as `sensu:sensu`, you need to change the access permissions for the collectd socket.
+That is done in the collectd [socket plugin](https://collectd.org/wiki/index.php/Plugin:UnixSock#Examples). You can add the socket to a group where the sensu user is, or
+simply make the collectd socket belong to the sensu group.
+```json
+LoadPlugin unixsock
+# ...
+<Plugin unixsock>
+  SocketFile "/path/to/socket"
+  SocketGroup "sensu"
+  SocketPerms "0660"
+  DeleteSocket true
+</Plugin>
+``` 
+Or alternatively you can give read/write access to all the users (I strongly recommend a common group with both users, sensu and collectd). 
+
+### Collectd basics
 To use this sensu check you need to be at least vaguely familiar with collectd. You can check [the docs](https://collectd.org/documentation.shtml). What you will need to know is the name of the metric, and the metric from the list you want to alert on. If you want to see all the metrics available in a machine:
 
 ```
